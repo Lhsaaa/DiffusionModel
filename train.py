@@ -64,7 +64,7 @@ def main():
 
 def create_argparser():
     defaults = dict(
-        data_dir="./dataset",
+        data_dir="/kaggle/working/DiffusionModel/dataset",
         schedule_sampler="uniform",
         lr=1e-4,
         weight_decay=0.0,
