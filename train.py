@@ -22,14 +22,17 @@ def main():
     if not os.path.exists(args.data_dir):
         raise FileNotFoundError("The dataset path {args.data_dir} is not found!")
 
+    # 初始化分布式进程组
     dist_util.setup_dist()
     logger.configure(args.log_dir)
 
+    # 配置日志
     logger.log("creating model and diffusion...")
-    model, diffusion = create_model_and_diffusion( # you can change mode here
+
+    model, diffusion = create_model_and_diffusion(  # you can change mode here
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )
-
+    # 使用GPU
     model.to(dist_util.dev())
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
 
@@ -38,7 +41,7 @@ def main():
         data_dir=args.data_dir,
         batch_size=args.batch_size,
         image_size=args.image_size,
-        category=["apple.npz"], # replace your own datasets name.
+        category=['apple.npz'],  # replace your own datasets name.
         class_cond=False,
     )
 
@@ -73,14 +76,14 @@ def create_argparser():
         microbatch=-1,  
         ema_rate="0.9999",  
         log_interval=10,
-        save_interval=100000,
+        save_interval=10000,
         resume_checkpoint="",
-        use_fp16=False,
+        use_fp16=True,
         fp16_scale_growth=1e-3,
         log_dir='./logs',
     )
     defaults.update(model_and_diffusion_defaults())
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser()  # 创建了一个命令行参数解析器对象
     add_dict_to_argparser(parser, defaults)
     return parser
 

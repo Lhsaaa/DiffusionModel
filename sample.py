@@ -21,14 +21,14 @@ from sketch_diffusion.script_util import (
 
 
 def canvas_size_google(sketch):
-    vertical_sum = np.cumsum(sketch[1:], axis=0)  
+    vertical_sum = np.cumsum(sketch[1:], axis=0)
 
     xmin, ymin, _ = np.min(vertical_sum, axis=0)
     xmax, ymax, _ = np.max(vertical_sum, axis=0)
 
     w = xmax - xmin
     h = ymax - ymin
-    start_x = -xmin - sketch[0][0]  
+    start_x = -xmin - sketch[0][0]
     start_y = -ymin - sketch[0][1]
     return [int(start_x), int(start_y), int(h), int(w)]
 
@@ -47,7 +47,7 @@ def draw_three(sketch, window_name="google", padding=30,
                random_color=False, time=1, show=False, img_size=256):
     thickness = int(img_size * 0.025)
 
-    sketch = scale_sketch(sketch, (img_size, img_size))  
+    sketch = scale_sketch(sketch, (img_size, img_size))
     [start_x, start_y, h, w] = canvas_size_google(sketch=sketch)
     start_x += thickness + 1
     start_y += thickness + 1
@@ -61,12 +61,12 @@ def draw_three(sketch, window_name="google", padding=30,
     for stroke in sketch:
         delta_x_y = stroke[0:0 + 2]
         state = stroke[2:]
-        if first_zero:  
+        if first_zero:
             pen_now += delta_x_y
             first_zero = False
             continue
         cv2.line(canvas, tuple(pen_now), tuple(pen_now + delta_x_y), color, thickness=thickness)
-        if int(state) == 1:  
+        if int(state) == 1:
             first_zero = True
             if random_color:
                 color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
@@ -80,18 +80,19 @@ def bin_pen(x, pen_break=0.005):
     result = x
     for i in range(x.size()[0]):
         for j in range(x.size()[1]):
-                pen = x[i][j][2]
-                if pen >= pen_break:
-                    result[i][j][2] = 1
-                else:
-                    result[i][j][2] = 0
+            pen = x[i][j][2]
+            if pen >= pen_break:
+                result[i][j][2] = 1
+            else:
+                result[i][j][2] = 0
     return result[:, :, :3]
+
 
 def main():
     args = create_argparser().parse_args()
 
-    if not os.path.exists(args.log_dir+'/test'):
-        os.makedirs(args.log_dir+'/test')
+    if not os.path.exists(args.log_dir + '/test'):
+        os.makedirs(args.log_dir + '/test')
     args.log_dir = args.log_dir + '/test'
     if not os.path.exists(args.save_path):
         os.makedirs(args.save_path)
@@ -102,8 +103,8 @@ def main():
     logger.log("creating model and diffusion...")
     # different modes, if noise or acc method, please specify 'data', 'raster', and 'loss'.
     model, diffusion = create_model_and_diffusion(
-    #model, diffusion = create_model_and_diffusion_acc(
-    #model, diffusion = create_model_and_diffusion_noise(
+        # model, diffusion = create_model_and_diffusion_acc(
+        # model, diffusion = create_model_and_diffusion_noise(
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )
     model.load_state_dict(
@@ -146,16 +147,17 @@ def main():
 
     save_image(th.stack(all_images), os.path.join(args.save_path, 'output.png'))
 
+
 def create_argparser():
     defaults = dict(
         clip_denoised=True,
         num_samples=50,
-        batch_size=16,
-        use_ddim=False,
-        model_path="",
-        log_dir='',
-        save_path="",
-        pen_break=0.5,
+        batch_size=4,
+        use_ddim=0,
+        model_path=r"D:\graduation_design\code\DiffusionModel\logs\ema_0.9999_080000.pt",
+        log_dir='./log_samples',
+        save_path="./output",
+        pen_break=10,
     )
     defaults.update(model_and_diffusion_defaults())
     parser = argparse.ArgumentParser()

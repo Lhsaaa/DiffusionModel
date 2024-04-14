@@ -22,25 +22,26 @@ from .resample import LossAwareSampler, UniformSampler
 
 INITIAL_LOG_LOSS_SCALE = 20.0
 
+
 class TrainLoop:
     def __init__(
-        self,
-        *,
-        model,
-        diffusion,
-        data,
-        batch_size,
-        microbatch,
-        lr,
-        ema_rate,
-        log_interval,
-        save_interval,
-        resume_checkpoint,
-        use_fp16=False,
-        fp16_scale_growth=1e-3,
-        schedule_sampler=None,
-        weight_decay=0.0,
-        lr_anneal_steps=0,
+            self,
+            *,
+            model,
+            diffusion,
+            data,
+            batch_size,
+            microbatch,
+            lr,
+            ema_rate,
+            log_interval,
+            save_interval,
+            resume_checkpoint,
+            use_fp16=False,
+            fp16_scale_growth=1e-3,
+            schedule_sampler=None,
+            weight_decay=0.0,
+            lr_anneal_steps=0,
     ):
         self.model = model
         self.diffusion = diffusion
@@ -117,8 +118,8 @@ class TrainLoop:
                         resume_checkpoint, map_location=dist_util.dev()
                     )
                 )
-
-        dist_util.sync_params(self.model.parameters())
+        with th.no_grad():
+            dist_util.sync_params(self.model.parameters())
 
     def _load_ema_parameters(self, rate):
         ema_params = copy.deepcopy(self.master_params)
@@ -151,26 +152,36 @@ class TrainLoop:
     def _setup_fp16(self):
         self.master_params = make_master_params(self.model_params)
         self.model.convert_to_fp16()
-    
+
     def run_loop(self):
+        # 循环直到达到训练步数上限
         while (
-            self.step + self.resume_step < 50001
+                self.step + self.resume_step < 500001
         ):
+            # 获取一个批次数据
             batch, _ = next(self.data)
+            # 将批次数据移动到指定设备上
             batch = batch.to(dist_util.dev())
+            # 如果启用混合精度训练，则将数据类型转换为浮点型
             if self.use_fp16:
                 batch = batch.type(th.FloatTensor)
+            # 执行单步训练操作
             self.run_step(batch, {})
+            # 每当训练步数能够整除日志间隔时记录日志
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
+            # 每当训练步数能够整除保存间隔时保存模型
             if self.step % self.save_interval == 0:
                 self.save()
+                # 如果设置了 "DIFFUSION_TRAINING_TEST" 环境变量并且步数大于0，则停止训练
                 if os.environ.get("DIFFUSION_TRAINING_TEST", "") and self.step > 0:
                     return
+            # 将训练步数加一
             self.step += 1
+        # 如果最后一个保存的步数不是整个保存间隔的倍数，则执行一次保存操作
         if (self.step - 1) % self.save_interval != 0:
             self.save()
-    
+
     def run_step(self, batch, cond):
         self.forward_backward(batch, cond)
         if self.use_fp16:
@@ -182,13 +193,13 @@ class TrainLoop:
     def forward_backward(self, batch, cond):
         zero_grad(self.model_params)
         for i in range(0, batch.shape[0], self.microbatch):
-            micro = batch[i : i + self.microbatch].to(dist_util.dev())
+            micro = batch[i: i + self.microbatch].to(dist_util.dev())
             micro_cond = {
-                k: v[i : i + self.microbatch].to(dist_util.dev())
+                k: v[i: i + self.microbatch].to(dist_util.dev())
                 for k, v in cond.items()
             }
             last_batch = (i + self.microbatch) >= batch.shape[0]
-            t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())# t.shape=[B]
+            t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())  # t.shape=[B]
 
             compute_losses = functools.partial(
                 self.diffusion.training_losses,
@@ -199,21 +210,21 @@ class TrainLoop:
             )
 
             if last_batch or not self.use_ddp:
-                losses = compute_losses()# losses['mse'].shape=[B] losses['loss'].shape=[B]
+                losses = compute_losses()  # losses['mse'].shape=[B] losses['loss'].shape=[B]
             else:
                 with self.ddp_model.no_sync():
                     losses = compute_losses()
 
-            if isinstance(self.schedule_sampler, LossAwareSampler):# False
+            if isinstance(self.schedule_sampler, LossAwareSampler):  # False
                 self.schedule_sampler.update_with_local_losses(
                     t, losses["loss"].detach()
                 )
 
-            loss = (losses["loss"] * weights).mean()# loss = (0.9931, device='cuda:0', grad_fn=<MeanBackward0>)
+            loss = (losses["loss"] * weights).mean()  # loss = (0.9931, device='cuda:0', grad_fn=<MeanBackward0>)
             log_loss_dict(
                 self.diffusion, t, {k: v * weights for k, v in losses.items()}
             )
-            if self.use_fp16:# False
+            if self.use_fp16:  # False
                 loss_scale = 2 ** self.lg_loss_scale
                 (loss * loss_scale).backward()
             else:
@@ -261,31 +272,44 @@ class TrainLoop:
         logger.logkv("samples", (self.step + self.resume_step + 1) * self.global_batch)
         if self.use_fp16:
             logger.logkv("lg_loss_scale", self.lg_loss_scale)
-    
+
     def save(self):
+        # 定义保存模型检查点的内部函数
         def save_checkpoint(rate, params):
+            # 将模型参数转换为状态字典
             state_dict = self._master_params_to_state_dict(params)
+            # 如果当前进程的排名为0（主进程）
             if dist.get_rank() == 0:
+                # 记录保存模型的日志信息
                 logger.log(f"saving model {rate}...")
+                # 构造保存模型的文件名
                 if not rate:
-                    filename = f"model{(self.step+self.resume_step):06d}.pt"
+                    filename = f"model{(self.step + self.resume_step):06d}.pt"
                 else:
-                    filename = f"ema_{rate}_{(self.step+self.resume_step):06d}.pt"
+                    filename = f"ema_{rate}_{(self.step + self.resume_step):06d}.pt"
+                # 使用 BlobFile 进行文件保存操作
                 with bf.BlobFile(bf.join(get_blob_logdir(), filename), "wb") as f:
+                    # 使用 PyTorch 的 save 方法保存状态字典到文件
                     th.save(state_dict, f)
+                # 打印保存模型的文件路径信息
                 print('save model at : {}'.format(bf.join(get_blob_logdir(), filename)))
 
+        # 保存主模型参数
         save_checkpoint(0, self.master_params)
+        # 依次保存指数移动平均参数
         for rate, params in zip(self.ema_rate, self.ema_params):
             save_checkpoint(rate, params)
 
+        # 如果当前进程的排名为0（主进程）
         if dist.get_rank() == 0:
+            # 使用 BlobFile 保存优化器的状态字典到文件
             with bf.BlobFile(
-                bf.join(get_blob_logdir(), f"opt{(self.step+self.resume_step):06d}.pt"),
-                "wb",
+                    bf.join(get_blob_logdir(), f"opt{(self.step + self.resume_step):06d}.pt"),
+                    "wb",
             ) as f:
                 th.save(self.opt.state_dict(), f)
 
+        # 使用 barrier() 方法确保所有进程都完成了保存操作
         dist.barrier()
 
     def _master_params_to_state_dict(self, master_params):

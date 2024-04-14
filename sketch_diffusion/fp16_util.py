@@ -61,7 +61,9 @@ def unflatten_master_params(model_params, master_params):
     """
     Unflatten the master parameters to look like model_params.
     """
-    return _unflatten_dense_tensors(master_params[0].detach(), model_params)
+    tensors = tuple(model_params)  # 将生成器对象转换为张量元组
+    return _unflatten_dense_tensors(master_params[0].detach(), tensors)
+
 
 
 def zero_grad(model_params):

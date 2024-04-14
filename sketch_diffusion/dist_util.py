@@ -32,7 +32,7 @@ def setup_dist():
 
     port = comm.bcast(_find_free_port(), root=0)
     os.environ["MASTER_PORT"] = str(port)
-    dist.init_process_group(backend=backend, init_method="env://")
+    dist.init_process_group(backend='gloo', init_method="env://")
 
 
 def dev():
@@ -63,7 +63,8 @@ def sync_params(params):
     """
     for p in params:
         with th.no_grad():
-            dist.broadcast(p, 0)
+            p_clone = p.clone().detach()  # 创建不跟踪梯度的副本
+            dist.broadcast(p_clone, 0)  # 对副本进行广播
 
 
 def _find_free_port():
