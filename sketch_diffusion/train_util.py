@@ -154,7 +154,7 @@ class TrainLoop:
     
     def run_loop(self):
         while (
-            self.step + self.resume_step < 50001
+            self.step + self.resume_step < 150001
         ):
             batch, _ = next(self.data)
             batch = batch.to(dist_util.dev())
